@@ -1,0 +1,18 @@
+node_modules/
+
+# Real IMAP/SMTP credentials. `.env.example` documents the keys instead.
+.env
+.env.*
+!.env.example
+
+# The local mailbox cache — this is actual mail, not fixture data.
+.data/
+
+# Bundled output, rebuilt from src/.
+lib/
+
+# Stray SvelteKit scaffolding from the project this was cut down from.
+.svelte-kit/
+
+*.log
+.DS_Store

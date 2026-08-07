@@ -1,0 +1,32 @@
+{
+  "name": "hello-tui",
+  "version": "0.1.0",
+  "description": "Ink terminal mail client",
+  "files": [
+    "src",
+    "bin"
+  ],
+  "bin": {
+    "hello-tui": "bin/hello-tui.mjs"
+  },
+  "scripts": {
+    "build": "echo 'No build step configured for Ink runtime'",
+    "dev": "tsx src/index.tsx",
+    "start": "node bin/hello-tui.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "imapflow": "^1.0.181",
+    "ink": "^7.1.0",
+    "mailparser": "^3.7.5",
+    "nodemailer": "^6.10.1",
+    "react": "^19.2.7",
+    "tsx": "^4.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.2.17",
+    "typescript": "^6.0.3"
+  },
+  "type": "module"
+}
