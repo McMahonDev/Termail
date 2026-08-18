@@ -19,6 +19,13 @@ function emptyStore() {
   return { messages: [], deletedIds: [], lastSyncAt: null };
 }
 
+/**
+ * Reads are deliberately strict about failure. Writes go through this same
+ * in-memory copy, so treating an unreadable file as "empty" would mean the next
+ * sync happily persists that emptiness over a cache holding thousands of
+ * messages. Only a genuinely absent file counts as empty; anything else stops
+ * the caller rather than quietly discarding mail.
+ */
 async function loadStore(accountId) {
   if (!accountId) {
     return emptyStore();
@@ -27,17 +34,38 @@ async function loadStore(accountId) {
     return loaded.get(accountId);
   }
 
-  let store;
+  const path = accountCachePath(accountId);
+  let raw;
+
   try {
-    const parsed = JSON.parse(await readFile(accountCachePath(accountId), 'utf8'));
-    store = {
-      messages: Array.isArray(parsed.messages) ? parsed.messages : [],
-      deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : [],
-      lastSyncAt: parsed.lastSyncAt || null
-    };
-  } catch {
-    store = emptyStore();
+    raw = await readFile(path, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      const store = emptyStore();
+      loaded.set(accountId, store);
+      return store;
+    }
+    throw new Error(`Could not read the mail cache at ${path}: ${error.message}`);
   }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    // Keep the bytes. They may be recoverable by hand, and overwriting them
+    // would turn a readable-file problem into permanent data loss.
+    const preserved = `${path}.corrupt-${Date.now()}`;
+    await rename(path, preserved);
+    throw new Error(
+      `The mail cache could not be parsed and was preserved at ${preserved}. Press y to re-sync.`
+    );
+  }
+
+  const store = {
+    messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+    deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : [],
+    lastSyncAt: parsed.lastSyncAt || null
+  };
 
   loaded.set(accountId, store);
   return store;

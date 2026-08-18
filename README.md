@@ -83,6 +83,29 @@ If you used a pre-TerMail build, the first launch imports your old `.env` and
 moves `.data/` into the locations below. It only happens when no account exists
 yet, and it doesn't delete anything.
 
+## Syncing
+
+Both protocols list message ids first, subtract everything already cached, then
+download the newest `limit` of what's left. So syncing repeatedly walks
+backwards through the mailbox instead of re-reading the same window:
+
+```
+y   next 200      Y   next 1000      F   everything left
+```
+
+The status bar reports what remains — `Synced 200 new · 4310 older still on
+server` — so you can keep pressing `Y`, or press `F` to finish the job. `F`
+counts first and shows the total before downloading anything; press it again to
+confirm, `esc` to back out. `esc` also stops a sync in progress, and because
+messages are fetched newest-first, a stopped run still leaves you the most
+recent mail.
+
+> **POP3 caveat.** Some providers only offer each message to POP once, or only
+> mail that arrived after POP was first used — Zoho is one of them. If a full
+> sync reports far fewer messages than the mailbox holds, that's the server's
+> POP download-scope setting, not TerMail. Switch that setting to download all
+> mail, or use IMAP, if you want the archive.
+
 ## Cache
 
 Synced mail is cached so the list renders instantly on launch instead of
@@ -117,8 +140,9 @@ TerMail clear-cache all          # every account
 | `Ctrl-D` / `Ctrl-U`, page keys | Page through it |
 | `Tab` | Cycle panes |
 | `/` | Search; `Esc` clears |
-| `y` | Sync the last 200 messages |
-| `Y` | Sync the last 1000 |
+| `y` | Download the next 200 messages |
+| `Y` | Download the next 1000 |
+| `F` | Full sync — counts first, then asks before starting |
 | `s` | Star |
 | `u` | Toggle unread |
 | `e` | Archive |

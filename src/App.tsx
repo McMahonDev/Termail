@@ -143,6 +143,13 @@ export function App({ startupNotice = '', initialScreen = 'mail' }: AppProps) {
   const activeAccountRef = useRef<string | null>(null);
   activeAccountRef.current = activeAccountId;
 
+  // Flipped by Esc during a sync; the sync loop checks it between messages.
+  const cancelSyncRef = useRef(false);
+
+  // How many messages a full sync would pull, once counted. A full sync can
+  // mean tens of thousands of downloads, so F counts first and asks.
+  const [pendingFullSync, setPendingFullSync] = useState<number | null>(null);
+
   const account = useMemo(
     () => accounts.find((item) => item.id === activeAccountId) || null,
     [accounts, activeAccountId]
@@ -386,33 +393,76 @@ export function App({ startupNotice = '', initialScreen = 'mail' }: AppProps) {
     }
 
     const label = protocolLabel(account.incoming.protocol);
+    const scope = Number.isFinite(limit) ? `up to ${limit}` : 'every remaining';
+    cancelSyncRef.current = false;
     setBusy(true);
-    setStatus(`Syncing up to ${limit} messages over ${label}…`);
+    setStatus(`Syncing ${scope} message${limit === 1 ? '' : 's'} over ${label}… (esc to stop)`);
 
     try {
-      // POP3 downloads whole messages, so it needs to know what's already here.
+      // Both protocols skip what's already cached, so each run continues from
+      // where the last one stopped rather than re-reading the same window.
       const existingIds = await listMessageIds(account.id);
       let lastReported = 0;
-      const synced = await syncIncoming(account, {
+      const result = await syncIncoming(account, {
         limit,
         existingIds,
+        shouldStop: () => cancelSyncRef.current,
         onProgress: (done: number, total: number) => {
           // Rendering on every message would thrash the terminal on a deep sync.
-          if (done - lastReported >= 25 || done === total) {
+          if (done - lastReported >= 10 || done === total) {
             lastReported = done;
-            setStatus(`Syncing ${done}/${total} over ${label}…`);
+            setStatus(`Syncing ${done}/${total} over ${label}… (esc to stop)`);
           }
         }
       });
 
-      await upsertMessages(account.id, synced);
+      await upsertMessages(account.id, result.items);
       await loadMailbox(account.id, currentFolder.id, query, false);
       setImapHealth({ state: 'ok', error: '' });
-      setStatus(synced.length === 0 ? 'Already up to date' : `Synced ${synced.length} new messages`);
+
+      const stopped = cancelSyncRef.current;
+      if (result.fetched === 0) {
+        setStatus(stopped ? 'Sync stopped' : `Already up to date (${result.total} on server)`);
+      } else if (result.remaining > 0) {
+        setStatus(`${stopped ? 'Stopped after' : 'Synced'} ${result.fetched} new · ${result.remaining} older still on server — Y for more, F for all`);
+      } else {
+        setStatus(`Synced ${result.fetched} new · mailbox fully synced (${result.total} total)`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setImapHealth({ state: 'fail', error: message });
       setStatus(`Sync failed: ${message}`);
+    } finally {
+      cancelSyncRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Counts what a full sync would download without downloading any of it —
+   * both protocols can list ids far more cheaply than message bodies.
+   */
+  const countPendingSync = async () => {
+    if (!account || !isIncomingConfigured(account)) {
+      setStatus(`${account ? protocolLabel(account.incoming.protocol) : 'Incoming mail'} is not configured — press A to edit it`);
+      return;
+    }
+
+    setBusy(true);
+    setStatus('Counting what is left to download…');
+    try {
+      const existingIds = await listMessageIds(account.id);
+      const { remaining, total } = await syncIncoming(account, { limit: 0, existingIds });
+
+      if (remaining === 0) {
+        setStatus(`Already up to date (${total} on server)`);
+        return;
+      }
+
+      setPendingFullSync(remaining);
+      setStatus(`Full sync will download ${remaining} of ${total} messages — press F again to start, esc to cancel`);
+    } catch (error) {
+      setStatus(`Could not count messages: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setBusy(false);
     }
@@ -588,6 +638,11 @@ export function App({ startupNotice = '', initialScreen = 'mail' }: AppProps) {
     }
 
     if (busy) {
+      // A long sync stays interruptible; everything else waits.
+      if (key.escape && !cancelSyncRef.current) {
+        cancelSyncRef.current = true;
+        setStatus('Stopping after the current message…');
+      }
       return;
     }
 
@@ -641,6 +696,15 @@ export function App({ startupNotice = '', initialScreen = 'mail' }: AppProps) {
       void runSync(1000);
       return;
     }
+    if (input === 'F') {
+      if (pendingFullSync !== null) {
+        setPendingFullSync(null);
+        void runSync(Number.POSITIVE_INFINITY);
+      } else {
+        void countPendingSync();
+      }
+      return;
+    }
     if (input === 'n') {
       void sendQuickMail();
       return;
@@ -670,6 +734,11 @@ export function App({ startupNotice = '', initialScreen = 'mail' }: AppProps) {
       return;
     }
     if (key.escape) {
+      if (pendingFullSync !== null) {
+        setPendingFullSync(null);
+        setStatus('Full sync cancelled');
+        return;
+      }
       setQuery('');
       setStatus('Search cleared');
     }
@@ -877,7 +946,7 @@ export function App({ startupNotice = '', initialScreen = 'mail' }: AppProps) {
         <Text color="gray">{accounts.length} account{accounts.length === 1 ? '' : 's'}</Text>
       </Box>
       <Text color="cyan" wrap="truncate-end">
-        tab pane | j/k move | / search | y sync | Y deep-sync | n send | t smtp-test | o open | s star | u unread | e archive | d delete | A accounts | C clear cache | r recheck | q quit
+        tab pane | j/k move | / search | y sync 200 | Y sync 1000 | F full sync | n send | t smtp-test | o open | s star | u unread | e archive | d delete | A accounts | C clear cache | r recheck | q quit
       </Text>
     </Box>
   );

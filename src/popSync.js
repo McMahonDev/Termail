@@ -231,22 +231,31 @@ function parseUidl(data) {
 
 /**
  * POP3 can't fetch headers separately, so every new message is a full download.
- * Anything already in the local cache is skipped rather than re-fetched, which
- * is what keeps a repeat sync cheap.
+ * UIDL lists the whole mailbox in one cheap command, so the work is planned up
+ * front: subtract what's already cached, then take the newest `limit` of what's
+ * left. Running it again therefore walks further back rather than re-fetching
+ * the same window, and `limit: Infinity` takes everything.
  *
  * @param {any} account
- * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void }} [options]
+ * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void, shouldStop?: () => boolean }} [options]
  */
-export async function syncPop(account, { limit = 200, existingIds = new Set(), onProgress } = {}) {
+export async function syncPop(account, { limit = 200, existingIds = new Set(), onProgress, shouldStop } = {}) {
   const client = await login(account);
   const items = [];
 
   try {
     const listing = parseUidl((await client.send('UIDL', true)).data);
-    const recent = listing.slice(Math.max(0, listing.length - limit));
-    const wanted = recent.filter((entry) => !existingIds.has(`pop-${entry.uid}`));
+    const candidates = listing.filter((entry) => !existingIds.has(`pop-${entry.uid}`));
+    const take = Number.isFinite(limit) ? Math.max(0, limit) : candidates.length;
+    // Newest first, so a run that's cancelled part-way still leaves the most
+    // recent mail in the cache rather than a random middle slice.
+    const wanted = candidates.slice(Math.max(0, candidates.length - take)).reverse();
 
     for (const entry of wanted) {
+      if (shouldStop?.()) {
+        break;
+      }
+
       const id = `pop-${entry.uid}`;
       const { data } = await client.send(`RETR ${entry.num}`, true);
       const parsed = await simpleParser(data);
@@ -269,7 +278,12 @@ export async function syncPop(account, { limit = 200, existingIds = new Set(), o
     }
 
     await client.quit();
-    return items;
+    return {
+      items,
+      total: listing.length,
+      fetched: items.length,
+      remaining: candidates.length - items.length
+    };
   } catch (error) {
     await client.quit();
     throw error;

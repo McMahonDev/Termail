@@ -29,8 +29,12 @@ export async function verifyIncoming(account) {
 }
 
 /**
+ * Returns { items, total, fetched, remaining } — `remaining` being how many
+ * messages on the server still aren't cached, which is what lets the UI say
+ * whether another pass would find anything.
+ *
  * @param {any} account
- * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void }} [options]
+ * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void, shouldStop?: () => boolean }} [options]
  */
 export async function syncIncoming(account, options = {}) {
   if (!account) {
