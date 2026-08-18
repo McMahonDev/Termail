@@ -1,32 +1,39 @@
 {
-  "name": "hello-tui",
-  "version": "0.1.0",
-  "description": "Ink terminal mail client",
+  "name": "termail",
+  "version": "0.2.0",
+  "description": "TerMail — a terminal email client",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "files": [
     "src",
-    "bin"
+    "bin",
+    "README.md"
   ],
   "bin": {
-    "hello-tui": "bin/hello-tui.mjs"
+    "TerMail": "bin/termail.mjs",
+    "termail": "bin/termail.mjs"
   },
   "scripts": {
-    "build": "echo 'No build step configured for Ink runtime'",
-    "dev": "tsx src/index.tsx",
-    "start": "node bin/hello-tui.mjs"
+    "dev": "node bin/termail.mjs",
+    "start": "node bin/termail.mjs",
+    "typecheck": "tsc --noEmit",
+    "install-global": "npm install && npm install -g ."
   },
   "dependencies": {
-    "dotenv": "^16.6.1",
     "imapflow": "^1.0.181",
     "ink": "^7.1.0",
     "mailparser": "^3.7.5",
     "nodemailer": "^6.10.1",
     "react": "^19.2.7",
-    "tsx": "^4.22.4"
+    "tsx": "^4.22.4",
+    "dotenv": "^16.6.1"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
     "@types/react": "^19.2.17",
     "typescript": "^6.0.3"
-  },
-  "type": "module"
+  }
 }
