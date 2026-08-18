@@ -60,12 +60,18 @@ const FETCH_CHUNK = 50;
  * of the rest. That makes a repeat run continue backwards instead of
  * re-downloading the same window, and `limit: Infinity` takes everything.
  *
+ * Pass `onBatch` for anything but a small window. Without it every fetched
+ * message — bodies included — is held until the run ends, which is exactly how
+ * a full sync of a large mailbox runs the heap out; with it, memory stays flat
+ * at one chunk and each batch is durable as soon as it lands.
+ *
  * @param {any} account
- * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void, shouldStop?: () => boolean }} [options]
+ * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void, onBatch?: (items: any[]) => Promise<void>, shouldStop?: () => boolean }} [options]
  */
-export async function syncInbox(account, { limit = 200, existingIds = new Set(), onProgress, shouldStop } = {}) {
+export async function syncInbox(account, { limit = 200, existingIds = new Set(), onProgress, onBatch, shouldStop } = {}) {
   const client = createClient(account);
   const items = [];
+  let fetched = 0;
 
   try {
     await client.connect();
@@ -84,6 +90,7 @@ export async function syncInbox(account, { limit = 200, existingIds = new Set(),
 
     for (let offset = 0; offset < wanted.length && !shouldStop?.(); offset += FETCH_CHUNK) {
       const chunk = wanted.slice(offset, offset + FETCH_CHUNK);
+      const batch = [];
 
       for await (const message of client.fetch(
         chunk,
@@ -94,7 +101,7 @@ export async function syncInbox(account, { limit = 200, existingIds = new Set(),
         const id = `imap-${message.uid}`;
         const date = message.internalDate ? new Date(message.internalDate) : new Date();
 
-        items.push(buildMessage({
+        batch.push(buildMessage({
           id,
           parsed,
           envelope: {
@@ -110,7 +117,14 @@ export async function syncInbox(account, { limit = 200, existingIds = new Set(),
           source: 'imap'
         }));
 
-        onProgress?.(items.length, wanted.length);
+        onProgress?.(fetched + batch.length, wanted.length);
+      }
+
+      fetched += batch.length;
+      if (onBatch) {
+        await onBatch(batch);
+      } else {
+        items.push(...batch);
       }
     }
 
@@ -118,8 +132,8 @@ export async function syncInbox(account, { limit = 200, existingIds = new Set(),
     return {
       items,
       total: uids.length,
-      fetched: items.length,
-      remaining: candidates.length - items.length
+      fetched,
+      remaining: candidates.length - fetched
     };
   } catch (error) {
     try {

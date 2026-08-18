@@ -215,6 +215,9 @@ export async function verifyPop(account) {
   }
 }
 
+/** How many messages are held before being handed off and released. */
+const BATCH_SIZE = 25;
+
 /** UIDL gives each message an id that survives across sessions. */
 function parseUidl(data) {
   return data
@@ -236,12 +239,31 @@ function parseUidl(data) {
  * left. Running it again therefore walks further back rather than re-fetching
  * the same window, and `limit: Infinity` takes everything.
  *
+ * Pass `onBatch` for anything but a small window. Without it every downloaded
+ * message — bodies included — is held until the run ends, which is exactly how
+ * a full sync of a large mailbox runs the heap out; with it, memory stays flat
+ * at one batch and each batch is durable as soon as it lands.
+ *
  * @param {any} account
- * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void, shouldStop?: () => boolean }} [options]
+ * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void, onBatch?: (items: any[]) => Promise<void>, shouldStop?: () => boolean }} [options]
  */
-export async function syncPop(account, { limit = 200, existingIds = new Set(), onProgress, shouldStop } = {}) {
+export async function syncPop(account, { limit = 200, existingIds = new Set(), onProgress, onBatch, shouldStop } = {}) {
   const client = await login(account);
   const items = [];
+  let batch = [];
+  let fetched = 0;
+
+  // RETR has no chunked form, so batching here is purely about how often the
+  // downloaded mail is handed off and released.
+  const flush = async () => {
+    fetched += batch.length;
+    if (onBatch) {
+      await onBatch(batch);
+    } else {
+      items.push(...batch);
+    }
+    batch = [];
+  };
 
   try {
     const listing = parseUidl((await client.send('UIDL', true)).data);
@@ -261,7 +283,7 @@ export async function syncPop(account, { limit = 200, existingIds = new Set(), o
       const parsed = await simpleParser(data);
       const date = parsed.date instanceof Date ? parsed.date : new Date();
 
-      items.push(buildMessage({
+      batch.push(buildMessage({
         id,
         parsed,
         when: date.toLocaleString(),
@@ -274,15 +296,20 @@ export async function syncPop(account, { limit = 200, existingIds = new Set(), o
         source: 'pop3'
       }));
 
-      onProgress?.(items.length, wanted.length);
+      onProgress?.(fetched + batch.length, wanted.length);
+
+      if (batch.length >= BATCH_SIZE) {
+        await flush();
+      }
     }
 
+    await flush();
     await client.quit();
     return {
       items,
       total: listing.length,
-      fetched: items.length,
-      remaining: candidates.length - items.length
+      fetched,
+      remaining: candidates.length - fetched
     };
   } catch (error) {
     await client.quit();

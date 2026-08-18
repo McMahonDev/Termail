@@ -32,4 +32,9 @@ export function accountAttachmentsDir(accountId) {
   return join(accountDataDir(accountId), 'attachments');
 }
 
+/** Message bodies, one file each, kept out of the index that stays in memory. */
+export function accountBodiesDir(accountId) {
+  return join(accountDataDir(accountId), 'bodies');
+}
+
 export const ACCOUNTS_ROOT = join(DATA_DIR, 'accounts');

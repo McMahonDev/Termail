@@ -407,6 +407,13 @@ export function App({ startupNotice = '', initialScreen = 'mail' }: AppProps) {
         limit,
         existingIds,
         shouldStop: () => cancelSyncRef.current,
+        // Each batch is written as it arrives rather than collected into one
+        // array and saved at the end. That keeps peak memory flat regardless of
+        // how deep the sync goes, and means stopping — or crashing — part-way
+        // still leaves everything fetched so far in the cache.
+        onBatch: async (batch: any[]) => {
+          await upsertMessages(account.id, batch);
+        },
         onProgress: (done: number, total: number) => {
           // Rendering on every message would thrash the terminal on a deep sync.
           if (done - lastReported >= 10 || done === total) {
@@ -416,7 +423,6 @@ export function App({ startupNotice = '', initialScreen = 'mail' }: AppProps) {
         }
       });
 
-      await upsertMessages(account.id, result.items);
       await loadMailbox(account.id, currentFolder.id, query, false);
       setImapHealth({ state: 'ok', error: '' });
 

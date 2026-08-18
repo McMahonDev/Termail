@@ -33,8 +33,12 @@ export async function verifyIncoming(account) {
  * messages on the server still aren't cached, which is what lets the UI say
  * whether another pass would find anything.
  *
+ * `onBatch` is how a large sync stays bounded: supply it and each batch of
+ * downloaded mail is handed over and released rather than accumulating in
+ * `items` until the run finishes.
+ *
  * @param {any} account
- * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void, shouldStop?: () => boolean }} [options]
+ * @param {{ limit?: number, existingIds?: Set<string>, onProgress?: (done: number, total: number) => void, onBatch?: (items: any[]) => Promise<void>, shouldStop?: () => boolean }} [options]
  */
 export async function syncIncoming(account, options = {}) {
   if (!account) {

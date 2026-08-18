@@ -112,6 +112,14 @@ Synced mail is cached so the list renders instantly on launch instead of
 blocking on IMAP. Each account gets its own cache directory, so switching
 accounts never mixes mail.
 
+The cache is split in two on purpose. `mail-cache.json` is an index — headers,
+flags, and the preview line — and it is the only part held in memory; message
+bodies live one file each under `bodies/`, read only when you open a message.
+Bodies are the overwhelming bulk of a real mailbox (HTML mail ran to 85% of a
+200MB cache here), so keeping them out of the index is what lets a full sync of
+a large mailbox run in a flat ~150MB instead of growing until it dies. An index
+written by an older version is migrated to this layout on first launch, once.
+
 Press `C` for the cache screen. It shows what each option would free and asks
 before deleting:
 
@@ -174,7 +182,8 @@ TerMail --help
 | Path | Holds |
 | --- | --- |
 | `~/.config/termail/config.json` | Accounts and credentials, mode `600` |
-| `~/.local/share/termail/accounts/<id>/mail-cache.json` | Cached messages |
+| `~/.local/share/termail/accounts/<id>/mail-cache.json` | Message index — headers, flags, previews |
+| `~/.local/share/termail/accounts/<id>/bodies/` | Message bodies, one file each |
 | `~/.local/share/termail/accounts/<id>/attachments/` | Downloaded attachments |
 
 `XDG_CONFIG_HOME` and `XDG_DATA_HOME` are honoured if you set them.
